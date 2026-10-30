@@ -5,7 +5,7 @@ import * as THREE from 'three'
 import hideoutLogo from './assets/hideout-logo.png'
 
 type Role = 'Hider' | 'Finder'
-type Phase = 'menu' | 'hide' | 'hunt' | 'results'
+type Phase = 'menu' | 'lobby' | 'hide' | 'hunt' | 'results'
 type RoomPanel = 'none' | 'create' | 'public' | 'join'
 type RoomVisibility = 'private' | 'public'
 type Spot = { id: string; name: string; position: [number, number, number]; color: string }
@@ -70,15 +70,15 @@ export default function App() {
 
   const startMatch = useCallback((nextRole: Role, lobbyCode?: string, visibility: RoomVisibility = 'private') => {
     setRole(nextRole)
-    setPhase('hide')
-    setSeconds(45)
+    setPhase('lobby')
+    setSeconds(0)
     setHiddenSpot(null)
     setCaughtBots([])
     setSuccessfulHides(0)
     setRoomCode(lobbyCode ?? null)
     setRoomVisibility(visibility)
     setPosition(nextRole === 'Finder' ? { x: 0, z: -0.5 } : { x: 0, z: 3.2 })
-    setNotice(nextRole === 'Finder' ? 'The hatch is locked. The Hiders are choosing their spots.' : 'Hide phase: 45 seconds. Make yourself hard to find.')
+    setNotice('Waiting in the pre-game lobby.')
   }, [])
 
   const endMatch = useCallback((winner: 'HIDERS' | 'FINDER') => {
@@ -148,6 +148,20 @@ export default function App() {
     return <MainMenu onStart={startMatch} />
   }
 
+  if (phase === 'lobby') {
+    return <PreGameLobby
+      role={role}
+      roomCode={roomCode ?? 'TRAINING'}
+      visibility={roomVisibility}
+      onLeave={() => setPhase('menu')}
+      onStart={() => {
+        setPhase('hide')
+        setSeconds(45)
+        setNotice(role === 'Finder' ? 'The hatch is locked. The Hiders are choosing their spots.' : 'Hide phase: 45 seconds. Make yourself hard to find.')
+      }}
+    />
+  }
+
   const phaseTitle = phase === 'hide' ? 'HIDE PHASE' : phase === 'hunt' ? 'HUNT PHASE' : 'MATCH COMPLETE'
   const interactionText = role === 'Finder'
     ? phase === 'hide' ? 'The hatch is locked' : nearbyBot >= 0 ? 'Catch nearby Hider' : 'Search for a Hider'
@@ -208,6 +222,30 @@ export default function App() {
       )}
     </main>
   )
+}
+
+function PreGameLobby({ role, roomCode, visibility, onLeave, onStart }: { role: Role; roomCode: string; visibility: RoomVisibility; onLeave: () => void; onStart: () => void }) {
+  const [ready, setReady] = useState(false)
+  const players = [
+    { name: 'YOU', role, ready, local: true, tint: '#e3c96d' },
+    { name: 'MOTH', role: 'Hider', ready: true, tint: '#83b9ad' },
+    { name: 'ROOK', role: 'Hider', ready: true, tint: '#8c98c8' },
+    { name: 'DOLLFACE', role: role === 'Finder' ? 'Hider' : 'Finder', ready: true, tint: '#d49272' },
+  ]
+  const allReady = players.every((player) => player.ready)
+  return <main className="lobby-shell">
+    <div className="lobby-ambient" /><div className="lobby-grid" />
+    <header className="lobby-topbar"><div className="brand-mini"><span className="brand-mark">H</span><span>HIDEOUT</span></div><span className="lobby-status"><i /> ROOM ASSEMBLING</span><button onClick={onLeave}>Leave Lobby</button></header>
+    <section className="lobby-layout">
+      <div className="lobby-title"><span className="eyebrow">{visibility.toUpperCase()} ROOM · {roomCode}</span><h1>Before the hunt,<br /><em>know your shadows.</em></h1><p>Check who is ready, choose your role, then enter The Forgotten Basement together.</p><div className="lobby-map-chip"><span>MAP 01</span><strong>The Forgotten Basement</strong><small>4–12 PLAYERS · 1 FINDER</small></div></div>
+      <section className="player-roster">
+        <div className="roster-heading"><div><span className="eyebrow">PLAYERS IN LOBBY</span><h2>4 <small>/ 4 ready</small></h2></div><span className="min-ready">MINIMUM MET</span></div>
+        <div className="player-list">{players.map((player) => <article className={`player-row ${player.local ? 'you' : ''}`} key={player.name}><span className="player-avatar" style={{ '--player-tint': player.tint } as React.CSSProperties}>{player.name[0]}</span><div><strong>{player.name}</strong><small>{player.local ? 'HOST · ' : ''}{player.role}</small></div><span className={`ready-pill ${player.ready ? 'ready' : ''}`}>{player.ready ? 'READY' : 'NOT READY'}</span></article>)}</div>
+        <div className="lobby-actions"><button className={`ready-button ${ready ? 'ready' : ''}`} onClick={() => setReady((value) => !value)}>{ready ? '✓ You are ready' : 'Mark as ready'}</button><button className="primary-button start-match" disabled={!allReady} onClick={onStart}>Start Hide Phase <span>→</span></button></div>
+        <p className="lobby-note">This prototype fills the remaining slots for testing. Live players will replace these test seats when multiplayer is connected.</p>
+      </section>
+    </section>
+  </main>
 }
 
 function MainMenu({ onStart }: { onStart: (role: Role, roomCode?: string, visibility?: RoomVisibility) => void }) {
