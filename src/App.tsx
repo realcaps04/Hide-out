@@ -150,6 +150,7 @@ export default function App() {
 
   if (phase === 'lobby') {
     return <PreGameLobby
+      key={roomCode ?? 'TRAINING'}
       role={role}
       roomCode={roomCode ?? 'TRAINING'}
       visibility={roomVisibility}
@@ -226,23 +227,23 @@ export default function App() {
 
 function PreGameLobby({ role, roomCode, visibility, onLeave, onStart }: { role: Role; roomCode: string; visibility: RoomVisibility; onLeave: () => void; onStart: () => void }) {
   const [ready, setReady] = useState(false)
+  const isTraining = roomCode === 'TRAINING'
   const players = [
     { name: 'YOU', role, ready, local: true, tint: '#e3c96d' },
-    { name: 'MOTH', role: 'Hider', ready: true, tint: '#83b9ad' },
-    { name: 'ROOK', role: 'Hider', ready: true, tint: '#8c98c8' },
-    { name: 'DOLLFACE', role: role === 'Finder' ? 'Hider' : 'Finder', ready: true, tint: '#d49272' },
   ]
-  const allReady = players.every((player) => player.ready)
+  const minimumPlayers = isTraining ? 1 : 4
+  const openSlots = Math.max(minimumPlayers - players.length, 0)
+  const canStart = isTraining || (players.length >= minimumPlayers && players.every((player) => player.ready))
   return <main className="lobby-shell">
     <div className="lobby-ambient" /><div className="lobby-grid" />
     <header className="lobby-topbar"><div className="brand-mini"><span className="brand-mark">H</span><span>HIDEOUT</span></div><span className="lobby-status"><i /> ROOM ASSEMBLING</span><button onClick={onLeave}>Leave Lobby</button></header>
     <section className="lobby-layout">
       <div className="lobby-title"><span className="eyebrow">{visibility.toUpperCase()} ROOM · {roomCode}</span><h1>Before the hunt,<br /><em>know your shadows.</em></h1><p>Check who is ready, choose your role, then enter The Forgotten Basement together.</p><div className="lobby-map-chip"><span>MAP 01</span><strong>The Forgotten Basement</strong><small>4–12 PLAYERS · 1 FINDER</small></div></div>
       <section className="player-roster">
-        <div className="roster-heading"><div><span className="eyebrow">PLAYERS IN LOBBY</span><h2>4 <small>/ 4 ready</small></h2></div><span className="min-ready">MINIMUM MET</span></div>
-        <div className="player-list">{players.map((player) => <article className={`player-row ${player.local ? 'you' : ''}`} key={player.name}><span className="player-avatar" style={{ '--player-tint': player.tint } as React.CSSProperties}>{player.name[0]}</span><div><strong>{player.name}</strong><small>{player.local ? 'HOST · ' : ''}{player.role}</small></div><span className={`ready-pill ${player.ready ? 'ready' : ''}`}>{player.ready ? 'READY' : 'NOT READY'}</span></article>)}</div>
-        <div className="lobby-actions"><button className={`ready-button ${ready ? 'ready' : ''}`} onClick={() => setReady((value) => !value)}>{ready ? '✓ You are ready' : 'Mark as ready'}</button><button className="primary-button start-match" disabled={!allReady} onClick={onStart}>Start Hide Phase <span>→</span></button></div>
-        <p className="lobby-note">This prototype fills the remaining slots for testing. Live players will replace these test seats when multiplayer is connected.</p>
+        <div className="roster-heading"><div><span className="eyebrow">PLAYERS IN LOBBY</span><h2>{players.length} <small>/ {minimumPlayers} minimum</small></h2></div><span className={`min-ready ${canStart ? 'met' : ''}`}>{canStart ? 'READY TO START' : `${openSlots} MORE NEEDED`}</span></div>
+        <div className="player-list">{players.map((player) => <article className={`player-row ${player.local ? 'you' : ''}`} key={player.name}><span className="player-avatar" style={{ '--player-tint': player.tint } as React.CSSProperties}><i className="avatar-head" /><i className="avatar-body" /></span><div><strong>{player.name}</strong><small>{player.local ? 'HOST · ' : ''}{player.role}</small></div><span className={`ready-pill ${player.ready ? 'ready' : ''}`}>{player.ready ? 'READY' : 'NOT READY'}</span></article>)}{Array.from({ length: openSlots }, (_, index) => <article className="player-row waiting-seat" key={`open-${index}`}><span className="player-avatar empty"><i className="avatar-head" /><i className="avatar-body" /></span><div><strong>OPEN SEAT</strong><small>WAITING FOR PLAYER</small></div><span className="ready-pill">OPEN</span></article>)}</div>
+        <div className="lobby-actions"><button className={`ready-button ${ready ? 'ready' : ''}`} onClick={() => setReady((value) => !value)}>{ready ? '✓ You are ready' : 'Mark as ready'}</button><button className="primary-button start-match" disabled={!canStart} onClick={onStart}>{isTraining ? 'Start Solo Training' : 'Start Hide Phase'} <span>→</span></button></div>
+        <p className="lobby-note">{isTraining ? 'Solo training starts immediately when you are ready.' : 'The room waits for real players. The roster updates whenever players join, leave, or switch rooms.'}</p>
       </section>
     </section>
   </main>
