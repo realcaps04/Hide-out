@@ -6,7 +6,8 @@ import hideoutLogo from './assets/hideout-logo.png'
 
 type Role = 'Hider' | 'Finder'
 type Phase = 'menu' | 'hide' | 'hunt' | 'results'
-type RoomPanel = 'none' | 'create' | 'join'
+type RoomPanel = 'none' | 'create' | 'public' | 'join'
+type RoomVisibility = 'private' | 'public'
 type Spot = { id: string; name: string; position: [number, number, number]; color: string }
 type Vector = { x: number; z: number }
 
@@ -56,6 +57,7 @@ export default function App() {
   const [successfulHides, setSuccessfulHides] = useState(0)
   const [notice, setNotice] = useState('Explore the basement. Find a clever hiding place.')
   const [roomCode, setRoomCode] = useState<string | null>(null)
+  const [roomVisibility, setRoomVisibility] = useState<RoomVisibility>('private')
 
   const nearbySpot = useMemo(
     () => HIDE_SPOTS.find((spot) => distance(position, spot.position) < 2.35) ?? null,
@@ -66,7 +68,7 @@ export default function App() {
     [position, caughtBots],
   )
 
-  const startMatch = useCallback((nextRole: Role, lobbyCode?: string) => {
+  const startMatch = useCallback((nextRole: Role, lobbyCode?: string, visibility: RoomVisibility = 'private') => {
     setRole(nextRole)
     setPhase('hide')
     setSeconds(45)
@@ -74,6 +76,7 @@ export default function App() {
     setCaughtBots([])
     setSuccessfulHides(0)
     setRoomCode(lobbyCode ?? null)
+    setRoomVisibility(visibility)
     setPosition(nextRole === 'Finder' ? { x: 0, z: -0.5 } : { x: 0, z: 3.2 })
     setNotice(nextRole === 'Finder' ? 'The hatch is locked. The Hiders are choosing their spots.' : 'Hide phase: 45 seconds. Make yourself hard to find.')
   }, [])
@@ -177,7 +180,7 @@ export default function App() {
         <p>{notice}</p>
       </aside>
 
-      {roomCode && <div className="room-code-hud"><span>PRIVATE ROOM</span><strong>{roomCode}</strong></div>}
+      {roomCode && <div className="room-code-hud"><span>{roomVisibility.toUpperCase()} ROOM</span><strong>{roomCode}</strong></div>}
 
       <aside className="status-card">
         <div><span>HIDERS</span><strong>{role === 'Finder' ? 3 - caughtBots.length : hiddenSpot ? 'HIDDEN' : 'ALIVE'}</strong></div>
@@ -207,7 +210,7 @@ export default function App() {
   )
 }
 
-function MainMenu({ onStart }: { onStart: (role: Role, roomCode?: string) => void }) {
+function MainMenu({ onStart }: { onStart: (role: Role, roomCode?: string, visibility?: RoomVisibility) => void }) {
   const [showAbout, setShowAbout] = useState(false)
   const [roomPanel, setRoomPanel] = useState<RoomPanel>('none')
   return (
@@ -220,6 +223,7 @@ function MainMenu({ onStart }: { onStart: (role: Role, roomCode?: string) => voi
         <p className="intro">A stylized game of hide-and-seek inside a basement much too big for the people trapped in it.</p>
         <div className="menu-actions">
           <button className="primary-button" onClick={() => setRoomPanel('create')}>Create Private Room <span>→</span></button>
+          <button className="public-room-button" onClick={() => setRoomPanel('public')}><i /> Create Public Room</button>
           <button className="secondary-button" onClick={() => setRoomPanel('join')}>Join with Code</button>
         </div>
         <div className="menu-quick-links"><button onClick={() => onStart('Hider')}>Solo Hider Training</button><i /> <button onClick={() => onStart('Finder')}>Finder Training</button></div>
@@ -237,11 +241,12 @@ function MainMenu({ onStart }: { onStart: (role: Role, roomCode?: string) => voi
   )
 }
 
-function RoomPanelDialog({ type, onClose, onStart }: { type: Exclude<RoomPanel, 'none'>; onClose: () => void; onStart: (role: Role, roomCode?: string) => void }) {
+function RoomPanelDialog({ type, onClose, onStart }: { type: Exclude<RoomPanel, 'none'>; onClose: () => void; onStart: (role: Role, roomCode?: string, visibility?: RoomVisibility) => void }) {
   const [code] = useState(makeRoomCode)
   const [joinCode, setJoinCode] = useState('')
   const [copied, setCopied] = useState(false)
-  const isCreate = type === 'create'
+  const isCreate = type === 'create' || type === 'public'
+  const isPublic = type === 'public'
   const copyCode = async () => {
     await navigator.clipboard?.writeText(code)
     setCopied(true)
@@ -249,18 +254,18 @@ function RoomPanelDialog({ type, onClose, onStart }: { type: Exclude<RoomPanel, 
   return <div className="lobby-overlay" role="dialog" aria-modal="true" aria-label={isCreate ? 'Create private room' : 'Join a room'}>
     <section className="lobby-card">
       <button className="modal-close" onClick={onClose} aria-label="Close">×</button>
-      <span className="eyebrow">{isCreate ? 'PRIVATE LOBBY' : 'ENTER THE HIDEOUT'}</span>
-      <h2>{isCreate ? 'Gather your crew.' : 'Join the hunt.'}</h2>
-      <p>{isCreate ? 'Share this code with friends. A full match begins once everyone is in the lobby.' : 'Ask the room host for their six-character Hideout code.'}</p>
+      <span className="eyebrow">{isPublic ? 'PUBLIC LOBBY' : isCreate ? 'PRIVATE LOBBY' : 'ENTER THE HIDEOUT'}</span>
+      <h2>{isPublic ? 'Open the doors.' : isCreate ? 'Gather your crew.' : 'Join the hunt.'}</h2>
+      <p>{isPublic ? 'Your room will be discoverable in the public room browser while it is waiting for players.' : isCreate ? 'Share this code with friends. A full match begins once everyone is in the lobby.' : 'Ask the room host for their six-character Hideout code.'}</p>
       {isCreate ? <>
         <div className="room-code-display"><span>ROOM CODE</span><strong>{code}</strong></div>
         <button className="copy-button" onClick={copyCode}>{copied ? 'Copied to clipboard' : 'Copy room code'}</button>
-        <button className="primary-button lobby-enter" onClick={() => onStart('Hider', code)}>Enter Lobby <span>→</span></button>
+        <button className="primary-button lobby-enter" onClick={() => onStart('Hider', code, isPublic ? 'public' : 'private')}>{isPublic ? 'Open Public Lobby' : 'Enter Lobby'} <span>→</span></button>
       </> : <>
         <label className="room-input"><span>ROOM CODE</span><input autoFocus value={joinCode} onChange={(event) => setJoinCode(event.target.value.toUpperCase())} placeholder="HIDE-AB12" maxLength={9} /></label>
         <button className="primary-button lobby-enter" disabled={joinCode.trim().length < 4} onClick={() => onStart('Hider', joinCode.trim())}>Join Room <span>→</span></button>
       </>}
-      <small>Prototype lobby interface · server matchmaking is the next multiplayer milestone.</small>
+      <small>{isPublic ? 'Public rooms are discoverable until the match starts.' : 'Creator exit before start closes this room.'} · server matchmaking is the next multiplayer milestone.</small>
     </section>
   </div>
 }
