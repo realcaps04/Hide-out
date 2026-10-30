@@ -6,6 +6,7 @@ import hideoutLogo from './assets/hideout-logo.png'
 
 type Role = 'Hider' | 'Finder'
 type Phase = 'menu' | 'hide' | 'hunt' | 'results'
+type RoomPanel = 'none' | 'create' | 'join'
 type Spot = { id: string; name: string; position: [number, number, number]; color: string }
 type Vector = { x: number; z: number }
 
@@ -36,6 +37,10 @@ function formatTime(seconds: number) {
   return `${String(Math.floor(safe / 60)).padStart(2, '0')}:${String(safe % 60).padStart(2, '0')}`
 }
 
+function makeRoomCode() {
+  return `HIDE-${Math.random().toString(36).slice(2, 6).toUpperCase()}`
+}
+
 function distance(a: Vector, b: [number, number, number]) {
   return Math.hypot(a.x - b[0], a.z - b[2])
 }
@@ -50,6 +55,7 @@ export default function App() {
   const [caughtBots, setCaughtBots] = useState<number[]>([])
   const [successfulHides, setSuccessfulHides] = useState(0)
   const [notice, setNotice] = useState('Explore the basement. Find a clever hiding place.')
+  const [roomCode, setRoomCode] = useState<string | null>(null)
 
   const nearbySpot = useMemo(
     () => HIDE_SPOTS.find((spot) => distance(position, spot.position) < 2.35) ?? null,
@@ -60,13 +66,14 @@ export default function App() {
     [position, caughtBots],
   )
 
-  const startMatch = useCallback((nextRole: Role) => {
+  const startMatch = useCallback((nextRole: Role, lobbyCode?: string) => {
     setRole(nextRole)
     setPhase('hide')
     setSeconds(45)
     setHiddenSpot(null)
     setCaughtBots([])
     setSuccessfulHides(0)
+    setRoomCode(lobbyCode ?? null)
     setPosition(nextRole === 'Finder' ? { x: 0, z: -0.5 } : { x: 0, z: 3.2 })
     setNotice(nextRole === 'Finder' ? 'The hatch is locked. The Hiders are choosing their spots.' : 'Hide phase: 45 seconds. Make yourself hard to find.')
   }, [])
@@ -170,6 +177,8 @@ export default function App() {
         <p>{notice}</p>
       </aside>
 
+      {roomCode && <div className="room-code-hud"><span>PRIVATE ROOM</span><strong>{roomCode}</strong></div>}
+
       <aside className="status-card">
         <div><span>HIDERS</span><strong>{role === 'Finder' ? 3 - caughtBots.length : hiddenSpot ? 'HIDDEN' : 'ALIVE'}</strong></div>
         <div><span>LIGHT</span><strong>{flashlight ? 'ON' : 'OFF'}</strong></div>
@@ -198,8 +207,9 @@ export default function App() {
   )
 }
 
-function MainMenu({ onStart }: { onStart: (role: Role) => void }) {
+function MainMenu({ onStart }: { onStart: (role: Role, roomCode?: string) => void }) {
   const [showAbout, setShowAbout] = useState(false)
+  const [roomPanel, setRoomPanel] = useState<RoomPanel>('none')
   return (
     <main className="menu-shell">
       <div className="menu-vignette" /><div className="menu-noise" />
@@ -209,9 +219,10 @@ function MainMenu({ onStart }: { onStart: (role: Role) => void }) {
         <p className="tagline"><span>Hide well.</span> Trust nobody. Survive the hunt.</p>
         <p className="intro">A stylized game of hide-and-seek inside a basement much too big for the people trapped in it.</p>
         <div className="menu-actions">
-          <button className="primary-button" onClick={() => onStart('Hider')}>Enter as a Hider <span>→</span></button>
-          <button className="secondary-button" onClick={() => onStart('Finder')}>Try the Finder training</button>
+          <button className="primary-button" onClick={() => setRoomPanel('create')}>Create Private Room <span>→</span></button>
+          <button className="secondary-button" onClick={() => setRoomPanel('join')}>Join with Code</button>
         </div>
+        <div className="menu-quick-links"><button onClick={() => onStart('Hider')}>Solo Hider Training</button><i /> <button onClick={() => onStart('Finder')}>Finder Training</button></div>
         <button className="about-button" onClick={() => setShowAbout((open) => !open)}>{showAbout ? 'Close project note' : 'What is this first build?'}</button>
         {showAbout && <p className="project-note">This is the first local gameplay slice: a playable 3D basement, movement, hiding spots, a timed hunt, and catch rules. Live rooms, player accounts, voice, and deployment will plug in as the next stages.</p>}
       </section>
@@ -221,8 +232,37 @@ function MainMenu({ onStart }: { onStart: (role: Role) => void }) {
         <p>Storage · Laundry · Workshop<br />Boiler Room · Old Library</p>
       </section>
       <footer className="menu-footer"><span>LOCAL PROTOTYPE 01</span><span>HEADPHONES RECOMMENDED</span></footer>
+      {roomPanel !== 'none' && <RoomPanelDialog type={roomPanel} onClose={() => setRoomPanel('none')} onStart={onStart} />}
     </main>
   )
+}
+
+function RoomPanelDialog({ type, onClose, onStart }: { type: Exclude<RoomPanel, 'none'>; onClose: () => void; onStart: (role: Role, roomCode?: string) => void }) {
+  const [code] = useState(makeRoomCode)
+  const [joinCode, setJoinCode] = useState('')
+  const [copied, setCopied] = useState(false)
+  const isCreate = type === 'create'
+  const copyCode = async () => {
+    await navigator.clipboard?.writeText(code)
+    setCopied(true)
+  }
+  return <div className="lobby-overlay" role="dialog" aria-modal="true" aria-label={isCreate ? 'Create private room' : 'Join a room'}>
+    <section className="lobby-card">
+      <button className="modal-close" onClick={onClose} aria-label="Close">×</button>
+      <span className="eyebrow">{isCreate ? 'PRIVATE LOBBY' : 'ENTER THE HIDEOUT'}</span>
+      <h2>{isCreate ? 'Gather your crew.' : 'Join the hunt.'}</h2>
+      <p>{isCreate ? 'Share this code with friends. A full match begins once everyone is in the lobby.' : 'Ask the room host for their six-character Hideout code.'}</p>
+      {isCreate ? <>
+        <div className="room-code-display"><span>ROOM CODE</span><strong>{code}</strong></div>
+        <button className="copy-button" onClick={copyCode}>{copied ? 'Copied to clipboard' : 'Copy room code'}</button>
+        <button className="primary-button lobby-enter" onClick={() => onStart('Hider', code)}>Enter Lobby <span>→</span></button>
+      </> : <>
+        <label className="room-input"><span>ROOM CODE</span><input autoFocus value={joinCode} onChange={(event) => setJoinCode(event.target.value.toUpperCase())} placeholder="HIDE-AB12" maxLength={9} /></label>
+        <button className="primary-button lobby-enter" disabled={joinCode.trim().length < 4} onClick={() => onStart('Hider', joinCode.trim())}>Join Room <span>→</span></button>
+      </>}
+      <small>Prototype lobby interface · server matchmaking is the next multiplayer milestone.</small>
+    </section>
+  </div>
 }
 
 function Basement({ phase, role, playerHidden, flashlight, caughtBots, onMove }: {
