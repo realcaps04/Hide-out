@@ -3,13 +3,60 @@ import { Environment, Float, Sparkles, Text } from '@react-three/drei'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import hideoutLogo from './assets/hideout-logo.png'
+import lobbyAvatarsBoys from './assets/lobby-avatars-boys.jpg'
+import lobbyAvatarsGirls from './assets/lobby-avatars-girls.jpg'
 
 type Role = 'Hider' | 'Finder'
-type Phase = 'menu' | 'lobby' | 'hide' | 'hunt' | 'results'
+type Phase = 'menu' | 'avatar' | 'lobby' | 'hide' | 'hunt' | 'results'
 type RoomPanel = 'none' | 'create' | 'public' | 'join'
 type RoomVisibility = 'private' | 'public'
+type AvatarGender = 'boys' | 'girls'
 type Spot = { id: string; name: string; position: [number, number, number]; color: string }
 type Vector = { x: number; z: number }
+type AvatarPreset = {
+  id: string
+  gender: AvatarGender
+  codename: string
+  label: string
+  tint: string
+  avatarX: string
+  avatarY: string
+  bodyColor: string
+}
+
+const AVATAR_SHEETS: Record<AvatarGender, string> = {
+  boys: lobbyAvatarsBoys,
+  girls: lobbyAvatarsGirls,
+}
+
+const AVATAR_PRESETS: AvatarPreset[] = [
+  { id: 'moss', gender: 'boys', codename: 'MOSS', label: 'Green Hood', tint: '#6f8f58', avatarX: '0%', avatarY: '0%', bodyColor: '#5f7d4a' },
+  { id: 'flare', gender: 'boys', codename: 'FLARE', label: 'Headlamp', tint: '#d27a3a', avatarX: '100%', avatarY: '0%', bodyColor: '#c45d22' },
+  { id: 'drift', gender: 'boys', codename: 'DRIFT', label: 'Teal Cap', tint: '#4fa3a0', avatarX: '0%', avatarY: '100%', bodyColor: '#3d8f8c' },
+  { id: 'ember', gender: 'boys', codename: 'EMBER', label: 'Mustard Coat', tint: '#c9a45a', avatarX: '100%', avatarY: '100%', bodyColor: '#b8893a' },
+  { id: 'scout', gender: 'girls', codename: 'SCOUT', label: 'Goggles', tint: '#c9a45a', avatarX: '0%', avatarY: '0%', bodyColor: '#8a8f93' },
+  { id: 'violet', gender: 'girls', codename: 'VIOLET', label: 'Purple Knit', tint: '#8b6aad', avatarX: '100%', avatarY: '0%', bodyColor: '#4a3d6b' },
+  { id: 'spark', gender: 'girls', codename: 'SPARK', label: 'Red Parka', tint: '#d45a4a', avatarX: '0%', avatarY: '100%', bodyColor: '#b83c32' },
+  { id: 'fern', gender: 'girls', codename: 'FERN', label: 'Olive Warm', tint: '#8a9a5a', avatarX: '100%', avatarY: '100%', bodyColor: '#6f7f45' },
+]
+
+function avatarSheet(preset: AvatarPreset) {
+  return AVATAR_SHEETS[preset.gender]
+}
+
+const AVATAR_STORAGE_KEY = 'hideout-avatar-v1'
+
+function loadSavedAvatar(): { presetId: string; displayName: string } {
+  try {
+    const raw = localStorage.getItem(AVATAR_STORAGE_KEY)
+    if (!raw) return { presetId: AVATAR_PRESETS[0].id, displayName: '' }
+    const parsed = JSON.parse(raw) as { presetId?: string; displayName?: string }
+    const presetId = AVATAR_PRESETS.some((p) => p.id === parsed.presetId) ? parsed.presetId! : AVATAR_PRESETS[0].id
+    return { presetId, displayName: typeof parsed.displayName === 'string' ? parsed.displayName.slice(0, 12) : '' }
+  } catch {
+    return { presetId: AVATAR_PRESETS[0].id, displayName: '' }
+  }
+}
 
 const HIDE_SPOTS: Spot[] = [
   { id: 'wardrobe', name: 'Dusty wardrobe', position: [-7.5, 0, -5.6], color: '#825b35' },
@@ -47,6 +94,7 @@ function distance(a: Vector, b: [number, number, number]) {
 }
 
 export default function App() {
+  const savedAvatar = useMemo(() => loadSavedAvatar(), [])
   const [phase, setPhase] = useState<Phase>('menu')
   const [role, setRole] = useState<Role>('Hider')
   const [seconds, setSeconds] = useState(45)
@@ -58,6 +106,12 @@ export default function App() {
   const [notice, setNotice] = useState('Explore the basement. Find a clever hiding place.')
   const [roomCode, setRoomCode] = useState<string | null>(null)
   const [roomVisibility, setRoomVisibility] = useState<RoomVisibility>('private')
+  const [avatarId, setAvatarId] = useState(savedAvatar.presetId)
+  const [displayName, setDisplayName] = useState(savedAvatar.displayName)
+  const selectedAvatar = useMemo(
+    () => AVATAR_PRESETS.find((preset) => preset.id === avatarId) ?? AVATAR_PRESETS[0],
+    [avatarId],
+  )
 
   const nearbySpot = useMemo(
     () => HIDE_SPOTS.find((spot) => distance(position, spot.position) < 2.35) ?? null,
@@ -70,7 +124,7 @@ export default function App() {
 
   const startMatch = useCallback((nextRole: Role, lobbyCode?: string, visibility: RoomVisibility = 'private') => {
     setRole(nextRole)
-    setPhase('lobby')
+    setPhase('avatar')
     setSeconds(0)
     setHiddenSpot(null)
     setCaughtBots([])
@@ -78,7 +132,7 @@ export default function App() {
     setRoomCode(lobbyCode ?? null)
     setRoomVisibility(visibility)
     setPosition(nextRole === 'Finder' ? { x: 0, z: -0.5 } : { x: 0, z: 3.2 })
-    setNotice('Waiting in the pre-game lobby.')
+    setNotice('Build your look before the lobby.')
   }, [])
 
   const endMatch = useCallback((winner: 'HIDERS' | 'FINDER') => {
@@ -148,13 +202,34 @@ export default function App() {
     return <MainMenu onStart={startMatch} />
   }
 
+  if (phase === 'avatar') {
+    return <AvatarBuilder
+      role={role}
+      roomCode={roomCode ?? 'TRAINING'}
+      visibility={roomVisibility}
+      presetId={avatarId}
+      displayName={displayName}
+      onBack={() => setPhase('menu')}
+      onConfirm={(nextPresetId, nextName) => {
+        setAvatarId(nextPresetId)
+        setDisplayName(nextName)
+        localStorage.setItem(AVATAR_STORAGE_KEY, JSON.stringify({ presetId: nextPresetId, displayName: nextName }))
+        setPhase('lobby')
+        setNotice('Waiting in the pre-game lobby.')
+      }}
+    />
+  }
+
   if (phase === 'lobby') {
     return <PreGameLobby
       key={roomCode ?? 'TRAINING'}
       role={role}
       roomCode={roomCode ?? 'TRAINING'}
       visibility={roomVisibility}
+      playerName={displayName.trim() || selectedAvatar.codename}
+      avatar={selectedAvatar}
       onLeave={() => setPhase('menu')}
+      onEditAvatar={() => setPhase('avatar')}
       onStart={() => {
         setPhase('hide')
         setSeconds(45)
@@ -177,6 +252,7 @@ export default function App() {
           playerHidden={Boolean(hiddenSpot)}
           flashlight={flashlight}
           caughtBots={caughtBots}
+          bodyColor={selectedAvatar.bodyColor}
           onMove={setPosition}
         />
       </Canvas>
@@ -225,28 +301,228 @@ export default function App() {
   )
 }
 
-function PreGameLobby({ role, roomCode, visibility, onLeave, onStart }: { role: Role; roomCode: string; visibility: RoomVisibility; onLeave: () => void; onStart: () => void }) {
+function AvatarBuilder({
+  role,
+  roomCode,
+  visibility,
+  presetId,
+  displayName,
+  onBack,
+  onConfirm,
+}: {
+  role: Role
+  roomCode: string
+  visibility: RoomVisibility
+  presetId: string
+  displayName: string
+  onBack: () => void
+  onConfirm: (presetId: string, displayName: string) => void
+}) {
+  const initial = AVATAR_PRESETS.find((preset) => preset.id === presetId) ?? AVATAR_PRESETS[0]
+  const [gender, setGender] = useState<AvatarGender>(initial.gender)
+  const [selectedId, setSelectedId] = useState(initial.id)
+  const [name, setName] = useState(displayName)
+  const selected = AVATAR_PRESETS.find((preset) => preset.id === selectedId) ?? AVATAR_PRESETS[0]
+  const visiblePresets = AVATAR_PRESETS.filter((preset) => preset.gender === gender)
+  const resolvedName = name.trim() || selected.codename
+
+  const pickGender = (next: AvatarGender) => {
+    setGender(next)
+    const first = AVATAR_PRESETS.find((preset) => preset.gender === next)
+    if (first && selected.gender !== next) setSelectedId(first.id)
+  }
+
+  return (
+    <main className="lobby-shell avatar-shell">
+      <div className="lobby-ambient" />
+      <div className="lobby-grid" />
+      <header className="lobby-topbar">
+        <div className="brand-mini"><span className="brand-mark">H</span><span>HIDEOUT</span></div>
+        <span className="lobby-status"><i /> BUILD YOUR LOOK</span>
+        <button onClick={onBack}>Back</button>
+      </header>
+      <section className="avatar-layout">
+        <div className="avatar-preview-panel">
+          <span className="eyebrow">{visibility.toUpperCase()} · {roomCode} · {role.toUpperCase()}</span>
+          <h1>Choose who<br /><em>hides in the dark.</em></h1>
+          <p>Four boy looks and four girl looks. Your portrait carries into the lobby and the basement.</p>
+          <div
+            className="avatar-hero"
+            style={{
+              '--player-tint': selected.tint,
+              '--avatar-x': selected.avatarX,
+              '--avatar-y': selected.avatarY,
+              backgroundImage: `url(${avatarSheet(selected)})`,
+            } as React.CSSProperties}
+            aria-label={`${selected.label} preview`}
+          />
+          <div className="avatar-hero-meta">
+            <strong>{resolvedName}</strong>
+            <small>{selected.gender === 'boys' ? 'BOY' : 'GIRL'} · {selected.label}</small>
+          </div>
+        </div>
+        <section className="avatar-studio">
+          <div className="roster-heading">
+            <div>
+              <span className="eyebrow">AVATAR PRESETS</span>
+              <h2>8 looks</h2>
+            </div>
+            <span className="min-ready met">4 BOYS · 4 GIRLS</span>
+          </div>
+          <div className="avatar-gender-tabs" role="tablist" aria-label="Avatar gender">
+            <button type="button" role="tab" aria-selected={gender === 'boys'} className={gender === 'boys' ? 'active' : ''} onClick={() => pickGender('boys')}>Boys</button>
+            <button type="button" role="tab" aria-selected={gender === 'girls'} className={gender === 'girls' ? 'active' : ''} onClick={() => pickGender('girls')}>Girls</button>
+          </div>
+          <div className="avatar-grid" role="listbox" aria-label={`${gender} avatar presets`}>
+            {visiblePresets.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                role="option"
+                aria-selected={preset.id === selectedId}
+                className={`avatar-option ${preset.id === selectedId ? 'selected' : ''}`}
+                onClick={() => setSelectedId(preset.id)}
+                style={{
+                  '--player-tint': preset.tint,
+                  '--avatar-x': preset.avatarX,
+                  '--avatar-y': preset.avatarY,
+                  backgroundImage: `url(${avatarSheet(preset)})`,
+                } as React.CSSProperties}
+              >
+                <span>{preset.label}</span>
+              </button>
+            ))}
+          </div>
+          <label className="room-input avatar-name-input">
+            <span>CODENAME</span>
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value.slice(0, 12))}
+              placeholder={selected.codename}
+              maxLength={12}
+              autoFocus
+            />
+          </label>
+          <div className="lobby-actions avatar-actions">
+            <button className="ready-button" onClick={onBack}>Cancel</button>
+            <button className="primary-button start-match" onClick={() => onConfirm(selected.id, resolvedName)}>
+              Enter Lobby <span>→</span>
+            </button>
+          </div>
+          <p className="lobby-note">Looks are saved on this device for the next match.</p>
+        </section>
+      </section>
+    </main>
+  )
+}
+
+function PreGameLobby({
+  role,
+  roomCode,
+  visibility,
+  playerName,
+  avatar,
+  onLeave,
+  onEditAvatar,
+  onStart,
+}: {
+  role: Role
+  roomCode: string
+  visibility: RoomVisibility
+  playerName: string
+  avatar: AvatarPreset
+  onLeave: () => void
+  onEditAvatar: () => void
+  onStart: () => void
+}) {
   const [ready, setReady] = useState(false)
   const isTraining = roomCode === 'TRAINING'
   const players = [
-    { name: 'YOU', role, ready, local: true, tint: '#e3c96d' },
+    {
+      name: playerName,
+      role,
+      ready,
+      local: true,
+      tint: avatar.tint,
+      avatarX: avatar.avatarX,
+      avatarY: avatar.avatarY,
+    },
   ]
   const minimumPlayers = isTraining ? 1 : 4
   const openSlots = Math.max(minimumPlayers - players.length, 0)
   const canStart = isTraining || (players.length >= minimumPlayers && players.every((player) => player.ready))
-  return <main className="lobby-shell">
-    <div className="lobby-ambient" /><div className="lobby-grid" />
-    <header className="lobby-topbar"><div className="brand-mini"><span className="brand-mark">H</span><span>HIDEOUT</span></div><span className="lobby-status"><i /> ROOM ASSEMBLING</span><button onClick={onLeave}>Leave Lobby</button></header>
-    <section className="lobby-layout">
-      <div className="lobby-title"><span className="eyebrow">{visibility.toUpperCase()} ROOM · {roomCode}</span><h1>Before the hunt,<br /><em>know your shadows.</em></h1><p>Check who is ready, choose your role, then enter The Forgotten Basement together.</p><div className="lobby-map-chip"><span>MAP 01</span><strong>The Forgotten Basement</strong><small>4–12 PLAYERS · 1 FINDER</small></div></div>
-      <section className="player-roster">
-        <div className="roster-heading"><div><span className="eyebrow">PLAYERS IN LOBBY</span><h2>{players.length} <small>/ {minimumPlayers} minimum</small></h2></div><span className={`min-ready ${canStart ? 'met' : ''}`}>{canStart ? 'READY TO START' : `${openSlots} MORE NEEDED`}</span></div>
-        <div className="player-list">{players.map((player) => <article className={`player-row ${player.local ? 'you' : ''}`} key={player.name}><span className="player-avatar" style={{ '--player-tint': player.tint } as React.CSSProperties}><i className="avatar-head" /><i className="avatar-body" /></span><div><strong>{player.name}</strong><small>{player.local ? 'HOST · ' : ''}{player.role}</small></div><span className={`ready-pill ${player.ready ? 'ready' : ''}`}>{player.ready ? 'READY' : 'NOT READY'}</span></article>)}{Array.from({ length: openSlots }, (_, index) => <article className="player-row waiting-seat" key={`open-${index}`}><span className="player-avatar empty"><i className="avatar-head" /><i className="avatar-body" /></span><div><strong>OPEN SEAT</strong><small>WAITING FOR PLAYER</small></div><span className="ready-pill">OPEN</span></article>)}</div>
-        <div className="lobby-actions"><button className={`ready-button ${ready ? 'ready' : ''}`} onClick={() => setReady((value) => !value)}>{ready ? '✓ You are ready' : 'Mark as ready'}</button><button className="primary-button start-match" disabled={!canStart} onClick={onStart}>{isTraining ? 'Start Solo Training' : 'Start Hide Phase'} <span>→</span></button></div>
-        <p className="lobby-note">{isTraining ? 'Solo training starts immediately when you are ready.' : 'The room waits for real players. The roster updates whenever players join, leave, or switch rooms.'}</p>
+  return (
+    <main className="lobby-shell">
+      <div className="lobby-ambient" /><div className="lobby-grid" />
+      <header className="lobby-topbar">
+        <div className="brand-mini"><span className="brand-mark">H</span><span>HIDEOUT</span></div>
+        <span className="lobby-status"><i /> ROOM ASSEMBLING</span>
+        <button onClick={onEditAvatar}>Edit Avatar</button>
+        <button onClick={onLeave}>Leave Lobby</button>
+      </header>
+      <section className="lobby-layout">
+        <div className="lobby-title">
+          <span className="eyebrow">{visibility.toUpperCase()} ROOM · {roomCode}</span>
+          <h1>Before the hunt,<br /><em>know your shadows.</em></h1>
+          <p>Check who is ready, choose your role, then enter The Forgotten Basement together.</p>
+          <div className="lobby-map-chip">
+            <span>MAP 01</span>
+            <strong>The Forgotten Basement</strong>
+            <small>4–12 PLAYERS · 1 FINDER</small>
+          </div>
+        </div>
+        <section className="player-roster">
+          <div className="roster-heading">
+            <div>
+              <span className="eyebrow">PLAYERS IN LOBBY</span>
+              <h2>{players.length} <small>/ {minimumPlayers} minimum</small></h2>
+            </div>
+            <span className={`min-ready ${canStart ? 'met' : ''}`}>{canStart ? 'READY TO START' : `${openSlots} MORE NEEDED`}</span>
+          </div>
+          <div className="player-list">
+            {players.map((player) => (
+              <article className={`player-row ${player.local ? 'you' : ''}`} key={player.name}>
+                <span
+                  className="player-avatar portrait"
+                  style={{
+                    '--player-tint': player.tint,
+                    '--avatar-x': player.avatarX,
+                    '--avatar-y': player.avatarY,
+                    backgroundImage: `url(${avatarSheet(avatar)})`,
+                  } as React.CSSProperties}
+                />
+                <div>
+                  <strong>{player.name}</strong>
+                  <small>{player.local ? 'HOST · ' : ''}{player.role}</small>
+                </div>
+                <span className={`ready-pill ${player.ready ? 'ready' : ''}`}>{player.ready ? 'READY' : 'NOT READY'}</span>
+              </article>
+            ))}
+            {Array.from({ length: openSlots }, (_, index) => (
+              <article className="player-row waiting-seat" key={`open-${index}`}>
+                <span className="player-avatar empty"><i className="avatar-head" /><i className="avatar-body" /></span>
+                <div><strong>OPEN SEAT</strong><small>WAITING FOR PLAYER</small></div>
+                <span className="ready-pill">OPEN</span>
+              </article>
+            ))}
+          </div>
+          <div className="lobby-actions">
+            <button className={`ready-button ${ready ? 'ready' : ''}`} onClick={() => setReady((value) => !value)}>
+              {ready ? '✓ You are ready' : 'Mark as ready'}
+            </button>
+            <button className="primary-button start-match" disabled={!canStart} onClick={onStart}>
+              {isTraining ? 'Start Solo Training' : 'Start Hide Phase'} <span>→</span>
+            </button>
+          </div>
+          <p className="lobby-note">
+            {isTraining
+              ? 'Solo training starts immediately when you are ready.'
+              : 'The room waits for real players. The roster updates whenever players join, leave, or switch rooms.'}
+          </p>
+        </section>
       </section>
-    </section>
-  </main>
+    </main>
+  )
 }
 
 function MainMenu({ onStart }: { onStart: (role: Role, roomCode?: string, visibility?: RoomVisibility) => void }) {
@@ -309,8 +585,8 @@ function RoomPanelDialog({ type, onClose, onStart }: { type: Exclude<RoomPanel, 
   </div>
 }
 
-function Basement({ phase, role, playerHidden, flashlight, caughtBots, onMove }: {
-  phase: Phase; role: Role; playerHidden: boolean; flashlight: boolean; caughtBots: number[]; onMove: (position: Vector) => void
+function Basement({ phase, role, playerHidden, flashlight, caughtBots, bodyColor, onMove }: {
+  phase: Phase; role: Role; playerHidden: boolean; flashlight: boolean; caughtBots: number[]; bodyColor: string; onMove: (position: Vector) => void
 }) {
   return <>
     <color attach="background" args={['#121811']} />
@@ -333,6 +609,7 @@ function Basement({ phase, role, playerHidden, flashlight, caughtBots, onMove }:
       flashlight={flashlight}
       role={role}
       phase={phase}
+      bodyColor={bodyColor}
       onMove={onMove}
     />
   </>
@@ -382,7 +659,7 @@ function BotHider({ position, visible }: { position: [number, number, number]; v
   return <group position={[position[0] + 0.25, 0.55, position[2] + 0.2]}><mesh castShadow><capsuleGeometry args={[0.26, 0.65, 6, 10]} /><meshStandardMaterial color="#9bb2b1" roughness={0.7} /></mesh><Text position={[0, 1, 0]} fontSize={0.2} color="#e2ddd0">HIDER</Text></group>
 }
 
-function PlayerController({ disabled, hidden, flashlight, role, phase, onMove }: { disabled: boolean; hidden: boolean; flashlight: boolean; role: Role; phase: Phase; onMove: (position: Vector) => void }) {
+function PlayerController({ disabled, hidden, flashlight, role, phase, bodyColor, onMove }: { disabled: boolean; hidden: boolean; flashlight: boolean; role: Role; phase: Phase; bodyColor: string; onMove: (position: Vector) => void }) {
   const character = useRef<THREE.Group>(null)
   const keys = useRef(new Set<string>())
   const drag = useRef(false)
@@ -433,7 +710,7 @@ function PlayerController({ disabled, hidden, flashlight, role, phase, onMove }:
     if (state.clock.elapsedTime - lastSent.current > 0.12) { onMove({ x: pos.current.x, z: pos.current.z }); lastSent.current = state.clock.elapsedTime }
   })
   return <group ref={character} onPointerDown={(event) => { event.stopPropagation(); drag.current = true; gl.domElement.style.cursor = 'grabbing' }}>
-    <mesh castShadow><capsuleGeometry args={[0.32, 0.73, 6, 12]} /><meshStandardMaterial color={role === 'Finder' ? '#bc6c45' : '#739b94'} roughness={0.58} /></mesh>
+    <mesh castShadow><capsuleGeometry args={[0.32, 0.73, 6, 12]} /><meshStandardMaterial color={role === 'Finder' ? '#bc6c45' : bodyColor} roughness={0.58} /></mesh>
     <mesh position={[0, 0.66, 0]} castShadow><sphereGeometry args={[0.3, 16, 12]} /><meshStandardMaterial color="#e4b18d" roughness={0.82} /></mesh>
     <mesh position={[0, 0.91, 0.12]}><sphereGeometry args={[0.06, 10, 10]} /><meshStandardMaterial color="#252b26" /></mesh>
     {flashlight && <spotLight position={[0.23, 0.4, 0]} rotation={[-Math.PI / 2, 0, 0]} angle={0.48} penumbra={0.8} intensity={15} distance={9} color="#fff1bc" target-position={[0, 0, 5]} />}

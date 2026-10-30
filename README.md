@@ -4,9 +4,13 @@
 
 HIDEOUT is a stylized browser-based hide-and-seek game. This repository contains the first playable local prototype of *The Forgotten Basement*.
 
+**GitHub:** [github.com/realcaps04/Hide-out](https://github.com/realcaps04/Hide-out)
+
 ## Included in Prototype 01
 
 - Branded HIDEOUT game menu
+- Avatar builder with lobby portraits
+- Pre-game player lobby (private / public / join code)
 - Stylized 3D basement environment
 - Third-person keyboard movement and drag-to-look camera
 - Interactive hiding locations
@@ -21,6 +25,13 @@ HIDEOUT is a stylized browser-based hide-and-seek game. This repository contains
 3. Run `npm run dev`.
 4. Open the local address shown in the terminal, normally `http://localhost:5173`.
 
+```bash
+git clone https://github.com/realcaps04/Hide-out.git
+cd Hide-out
+npm install
+npm run dev
+```
+
 ## Controls
 
 | Control | Action |
@@ -33,7 +44,6 @@ HIDEOUT is a stylized browser-based hide-and-seek game. This repository contains
 
 ## Planned next stages
 
-- Private rooms and real-time multiplayer
 - Shared player movement and server-authoritative match rules
 - Online accounts and player stats
 - Voice and text chat
