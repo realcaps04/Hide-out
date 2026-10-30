@@ -3,59 +3,157 @@ import { Environment, Float, Sparkles, Text } from '@react-three/drei'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import hideoutLogo from './assets/hideout-logo.png'
-import lobbyAvatarsBoys from './assets/lobby-avatars-boys.jpg'
-import lobbyAvatarsGirls from './assets/lobby-avatars-girls.jpg'
+import { AvatarCharacter, AvatarStage, AvatarThumb, type AvatarAction, type AvatarAccessory, type AvatarGender, type AvatarLook } from './AvatarCharacter'
 
 type Role = 'Hider' | 'Finder'
 type Phase = 'menu' | 'avatar' | 'lobby' | 'hide' | 'hunt' | 'results'
-type RoomPanel = 'none' | 'create' | 'public' | 'join'
+type RoomPanel = 'none' | 'create' | 'public' | 'browse' | 'join'
 type RoomVisibility = 'private' | 'public'
-type AvatarGender = 'boys' | 'girls'
 type Spot = { id: string; name: string; position: [number, number, number]; color: string }
 type Vector = { x: number; z: number }
-type AvatarPreset = {
+type PublicRoomListing = {
   id: string
-  gender: AvatarGender
-  codename: string
-  label: string
-  tint: string
-  avatarX: string
-  avatarY: string
-  bodyColor: string
+  name: string
+  host: string
+  players: number
+  capacity: number
+  map: string
+  wait: string
 }
 
-const AVATAR_SHEETS: Record<AvatarGender, string> = {
-  boys: lobbyAvatarsBoys,
-  girls: lobbyAvatarsGirls,
-}
-
-const AVATAR_PRESETS: AvatarPreset[] = [
-  { id: 'moss', gender: 'boys', codename: 'MOSS', label: 'Green Hood', tint: '#6f8f58', avatarX: '0%', avatarY: '0%', bodyColor: '#5f7d4a' },
-  { id: 'flare', gender: 'boys', codename: 'FLARE', label: 'Headlamp', tint: '#d27a3a', avatarX: '100%', avatarY: '0%', bodyColor: '#c45d22' },
-  { id: 'drift', gender: 'boys', codename: 'DRIFT', label: 'Teal Cap', tint: '#4fa3a0', avatarX: '0%', avatarY: '100%', bodyColor: '#3d8f8c' },
-  { id: 'ember', gender: 'boys', codename: 'EMBER', label: 'Mustard Coat', tint: '#c9a45a', avatarX: '100%', avatarY: '100%', bodyColor: '#b8893a' },
-  { id: 'scout', gender: 'girls', codename: 'SCOUT', label: 'Goggles', tint: '#c9a45a', avatarX: '0%', avatarY: '0%', bodyColor: '#8a8f93' },
-  { id: 'violet', gender: 'girls', codename: 'VIOLET', label: 'Purple Knit', tint: '#8b6aad', avatarX: '100%', avatarY: '0%', bodyColor: '#4a3d6b' },
-  { id: 'spark', gender: 'girls', codename: 'SPARK', label: 'Red Parka', tint: '#d45a4a', avatarX: '0%', avatarY: '100%', bodyColor: '#b83c32' },
-  { id: 'fern', gender: 'girls', codename: 'FERN', label: 'Olive Warm', tint: '#8a9a5a', avatarX: '100%', avatarY: '100%', bodyColor: '#6f7f45' },
+const PUBLIC_ROOM_POOL: PublicRoomListing[] = [
+  { id: 'nightwatch', name: 'Nightwatch Cellar', host: 'MOSS', players: 3, capacity: 8, map: 'The Forgotten Basement', wait: 'Filling' },
+  { id: 'boiler-rats', name: 'Boiler Rats', host: 'SCOUT', players: 5, capacity: 10, map: 'The Forgotten Basement', wait: 'Almost full' },
+  { id: 'laundry-echo', name: 'Laundry Echo', host: 'VIOLET', players: 2, capacity: 6, map: 'The Forgotten Basement', wait: 'Open' },
+  { id: 'crate-crawl', name: 'Crate Crawl', host: 'DRIFT', players: 4, capacity: 8, map: 'The Forgotten Basement', wait: 'Filling' },
+  { id: 'hatch-open', name: 'Hatch Left Open', host: 'SPARK', players: 1, capacity: 12, map: 'The Forgotten Basement', wait: 'Open' },
+  { id: 'shelf-shadows', name: 'Shelf Shadows', host: 'FERN', players: 6, capacity: 8, map: 'The Forgotten Basement', wait: 'Almost full' },
 ]
 
-function avatarSheet(preset: AvatarPreset) {
-  return AVATAR_SHEETS[preset.gender]
+function shufflePublicRooms(seed = Date.now()) {
+  const list = [...PUBLIC_ROOM_POOL]
+  let t = seed
+  for (let i = list.length - 1; i > 0; i -= 1) {
+    t = (t * 1664525 + 1013904223) >>> 0
+    const j = t % (i + 1)
+    ;[list[i], list[j]] = [list[j], list[i]]
+  }
+  return list.slice(0, 4).map((room, index) => ({
+    ...room,
+    players: Math.min(room.capacity - 1, Math.max(1, room.players + ((seed + index) % 3) - 1)),
+  }))
 }
 
-const AVATAR_STORAGE_KEY = 'hideout-avatar-v1'
+type DressKit = {
+  id: string
+  label: string
+  gender: AvatarGender
+  tint: string
+  bodyColor: string
+  accentColor: string
+  hairColor: string
+  accessory: AvatarAccessory
+  action: AvatarAction
+}
 
-function loadSavedAvatar(): { presetId: string; displayName: string } {
+const BASE_CHARACTERS: Record<AvatarGender, AvatarLook> = {
+  boys: {
+    id: 'boy-base',
+    gender: 'boys',
+    codename: 'SHADOW',
+    label: 'Starter Coat',
+    tint: '#6f8f58',
+    bodyColor: '#5f7d4a',
+    accentColor: '#4f6a3d',
+    hairColor: '#3b2a1d',
+    skinColor: '#e4b18d',
+    accessory: 'hood',
+    action: 'ready',
+  },
+  girls: {
+    id: 'girl-base',
+    gender: 'girls',
+    codename: 'ECHO',
+    label: 'Starter Parka',
+    tint: '#8b6aad',
+    bodyColor: '#6a5a88',
+    accentColor: '#8b6aad',
+    hairColor: '#5a3b28',
+    skinColor: '#e6b690',
+    accessory: 'knit',
+    action: 'ready',
+  },
+}
+
+const DRESS_KITS: DressKit[] = [
+  { id: 'moss', label: 'Green Hood', gender: 'boys', tint: '#6f8f58', bodyColor: '#5f7d4a', accentColor: '#4f6a3d', hairColor: '#3b2a1d', accessory: 'hood', action: 'sneak' },
+  { id: 'flare', label: 'Headlamp', gender: 'boys', tint: '#d27a3a', bodyColor: '#c45d22', accentColor: '#222222', hairColor: '#1a1a1a', accessory: 'headlamp', action: 'search' },
+  { id: 'drift', label: 'Teal Cap', gender: 'boys', tint: '#4fa3a0', bodyColor: '#3d8f8c', accentColor: '#2f7f7c', hairColor: '#2a1f18', accessory: 'cap', action: 'bounce' },
+  { id: 'ember', label: 'Mustard Coat', gender: 'boys', tint: '#c9a45a', bodyColor: '#b8893a', accentColor: '#2c3a55', hairColor: '#b45a2a', accessory: 'beanie', action: 'wave' },
+  { id: 'scout', label: 'Goggles', gender: 'girls', tint: '#c9a45a', bodyColor: '#8a8f93', accentColor: '#c9a45a', hairColor: '#5a3b28', accessory: 'goggles', action: 'flash' },
+  { id: 'violet', label: 'Purple Knit', gender: 'girls', tint: '#8b6aad', bodyColor: '#4a3d6b', accentColor: '#8b6aad', hairColor: '#2c1d33', accessory: 'knit', action: 'look' },
+  { id: 'spark', label: 'Red Parka', gender: 'girls', tint: '#d45a4a', bodyColor: '#b83c32', accentColor: '#d7b56a', hairColor: '#1c1c1c', accessory: 'glasses', action: 'ready' },
+  { id: 'fern', label: 'Olive Warm', gender: 'girls', tint: '#8a9a5a', bodyColor: '#6f7f45', accentColor: '#7f8f4f', hairColor: '#c9ae6a', accessory: 'earmuffs', action: 'signal' },
+]
+
+const ACTION_LABELS: Record<AvatarAction, string> = {
+  wave: 'Waving hello',
+  search: 'Scanning the dark',
+  sneak: 'Sneaking low',
+  ready: 'Match ready stance',
+  flash: 'Flashlight sweep',
+  look: 'Watching corners',
+  bounce: 'Warm-up bounce',
+  signal: 'Signal flare',
+}
+
+const AVATAR_STORAGE_KEY = 'hideout-avatar-v2'
+
+function applyDress(base: AvatarLook, kit: DressKit, displayName?: string): AvatarLook {
+  return {
+    ...base,
+    id: `${base.gender}-${kit.id}`,
+    label: kit.label,
+    tint: kit.tint,
+    bodyColor: kit.bodyColor,
+    accentColor: kit.accentColor,
+    hairColor: kit.hairColor,
+    accessory: kit.accessory,
+    action: kit.action,
+    codename: displayName?.trim() || base.codename,
+  }
+}
+
+function lookFromSave(gender: AvatarGender, dressId: string, displayName: string): AvatarLook {
+  const base = BASE_CHARACTERS[gender]
+  const kit = DRESS_KITS.find((item) => item.id === dressId && item.gender === gender) ?? DRESS_KITS.find((item) => item.gender === gender)!
+  return applyDress(base, kit, displayName || base.codename)
+}
+
+function loadSavedAvatar(): { gender: AvatarGender; dressId: string; displayName: string; look: AvatarLook } {
   try {
     const raw = localStorage.getItem(AVATAR_STORAGE_KEY)
-    if (!raw) return { presetId: AVATAR_PRESETS[0].id, displayName: '' }
-    const parsed = JSON.parse(raw) as { presetId?: string; displayName?: string }
-    const presetId = AVATAR_PRESETS.some((p) => p.id === parsed.presetId) ? parsed.presetId! : AVATAR_PRESETS[0].id
-    return { presetId, displayName: typeof parsed.displayName === 'string' ? parsed.displayName.slice(0, 12) : '' }
+    if (!raw) {
+      const gender: AvatarGender = 'boys'
+      const dressId = DRESS_KITS.find((item) => item.gender === gender)!.id
+      return { gender, dressId, displayName: '', look: lookFromSave(gender, dressId, '') }
+    }
+    const parsed = JSON.parse(raw) as { gender?: AvatarGender; dressId?: string; displayName?: string }
+    const gender: AvatarGender = parsed.gender === 'girls' ? 'girls' : 'boys'
+    const dressId = DRESS_KITS.some((item) => item.id === parsed.dressId && item.gender === gender)
+      ? parsed.dressId!
+      : DRESS_KITS.find((item) => item.gender === gender)!.id
+    const displayName = typeof parsed.displayName === 'string' ? parsed.displayName.slice(0, 12) : ''
+    return { gender, dressId, displayName, look: lookFromSave(gender, dressId, displayName) }
   } catch {
-    return { presetId: AVATAR_PRESETS[0].id, displayName: '' }
+    const gender: AvatarGender = 'boys'
+    const dressId = DRESS_KITS.find((item) => item.gender === gender)!.id
+    return { gender, dressId, displayName: '', look: lookFromSave(gender, dressId, '') }
   }
+}
+
+function saveAvatar(gender: AvatarGender, dressId: string, displayName: string) {
+  localStorage.setItem(AVATAR_STORAGE_KEY, JSON.stringify({ gender, dressId, displayName }))
 }
 
 const HIDE_SPOTS: Spot[] = [
@@ -106,12 +204,10 @@ export default function App() {
   const [notice, setNotice] = useState('Explore the basement. Find a clever hiding place.')
   const [roomCode, setRoomCode] = useState<string | null>(null)
   const [roomVisibility, setRoomVisibility] = useState<RoomVisibility>('private')
-  const [avatarId, setAvatarId] = useState(savedAvatar.presetId)
+  const [avatarGender, setAvatarGender] = useState<AvatarGender>(savedAvatar.gender)
+  const [dressId, setDressId] = useState(savedAvatar.dressId)
   const [displayName, setDisplayName] = useState(savedAvatar.displayName)
-  const selectedAvatar = useMemo(
-    () => AVATAR_PRESETS.find((preset) => preset.id === avatarId) ?? AVATAR_PRESETS[0],
-    [avatarId],
-  )
+  const [selectedAvatar, setSelectedAvatar] = useState<AvatarLook>(savedAvatar.look)
 
   const nearbySpot = useMemo(
     () => HIDE_SPOTS.find((spot) => distance(position, spot.position) < 2.35) ?? null,
@@ -132,7 +228,7 @@ export default function App() {
     setRoomCode(lobbyCode ?? null)
     setRoomVisibility(visibility)
     setPosition(nextRole === 'Finder' ? { x: 0, z: -0.5 } : { x: 0, z: 3.2 })
-    setNotice('Build your look before the lobby.')
+    setNotice('Choose boy or girl, then dress up in the lobby.')
   }, [])
 
   const endMatch = useCallback((winner: 'HIDERS' | 'FINDER') => {
@@ -207,13 +303,18 @@ export default function App() {
       role={role}
       roomCode={roomCode ?? 'TRAINING'}
       visibility={roomVisibility}
-      presetId={avatarId}
+      gender={avatarGender}
       displayName={displayName}
       onBack={() => setPhase('menu')}
-      onConfirm={(nextPresetId, nextName) => {
-        setAvatarId(nextPresetId)
+      onConfirm={(nextGender, nextName) => {
+        const nextDress = DRESS_KITS.find((item) => item.gender === nextGender && item.id === dressId)?.id
+          ?? DRESS_KITS.find((item) => item.gender === nextGender)!.id
+        const nextLook = lookFromSave(nextGender, nextDress, nextName)
+        setAvatarGender(nextGender)
+        setDressId(nextDress)
         setDisplayName(nextName)
-        localStorage.setItem(AVATAR_STORAGE_KEY, JSON.stringify({ presetId: nextPresetId, displayName: nextName }))
+        setSelectedAvatar(nextLook)
+        saveAvatar(nextGender, nextDress, nextName)
         setPhase('lobby')
         setNotice('Waiting in the pre-game lobby.')
       }}
@@ -228,8 +329,14 @@ export default function App() {
       visibility={roomVisibility}
       playerName={displayName.trim() || selectedAvatar.codename}
       avatar={selectedAvatar}
+      dressId={dressId}
       onLeave={() => setPhase('menu')}
-      onEditAvatar={() => setPhase('avatar')}
+      onSwitchCharacter={() => setPhase('avatar')}
+      onDressChange={(nextDressId, nextLook) => {
+        setDressId(nextDressId)
+        setSelectedAvatar(nextLook)
+        saveAvatar(avatarGender, nextDressId, displayName.trim() || nextLook.codename)
+      }}
       onStart={() => {
         setPhase('hide')
         setSeconds(45)
@@ -252,7 +359,7 @@ export default function App() {
           playerHidden={Boolean(hiddenSpot)}
           flashlight={flashlight}
           caughtBots={caughtBots}
-          bodyColor={selectedAvatar.bodyColor}
+          avatar={selectedAvatar}
           onMove={setPosition}
         />
       </Canvas>
@@ -271,7 +378,12 @@ export default function App() {
         <p>{notice}</p>
       </aside>
 
-      {roomCode && <div className="room-code-hud"><span>{roomVisibility.toUpperCase()} ROOM</span><strong>{roomCode}</strong></div>}
+      {roomCode && roomVisibility === 'private' && roomCode !== 'TRAINING' && (
+        <div className="room-code-hud"><span>PRIVATE ROOM</span><strong>{roomCode}</strong></div>
+      )}
+      {roomVisibility === 'public' && roomCode && (
+        <div className="room-code-hud"><span>PUBLIC ROOM</span><strong>{roomCode}</strong></div>
+      )}
 
       <aside className="status-card">
         <div><span>HIDERS</span><strong>{role === 'Finder' ? 3 - caughtBots.length : hiddenSpot ? 'HIDDEN' : 'ALIVE'}</strong></div>
@@ -305,7 +417,7 @@ function AvatarBuilder({
   role,
   roomCode,
   visibility,
-  presetId,
+  gender,
   displayName,
   onBack,
   onConfirm,
@@ -313,24 +425,15 @@ function AvatarBuilder({
   role: Role
   roomCode: string
   visibility: RoomVisibility
-  presetId: string
+  gender: AvatarGender
   displayName: string
   onBack: () => void
-  onConfirm: (presetId: string, displayName: string) => void
+  onConfirm: (gender: AvatarGender, displayName: string) => void
 }) {
-  const initial = AVATAR_PRESETS.find((preset) => preset.id === presetId) ?? AVATAR_PRESETS[0]
-  const [gender, setGender] = useState<AvatarGender>(initial.gender)
-  const [selectedId, setSelectedId] = useState(initial.id)
+  const [selectedGender, setSelectedGender] = useState<AvatarGender>(gender)
   const [name, setName] = useState(displayName)
-  const selected = AVATAR_PRESETS.find((preset) => preset.id === selectedId) ?? AVATAR_PRESETS[0]
-  const visiblePresets = AVATAR_PRESETS.filter((preset) => preset.gender === gender)
+  const selected = BASE_CHARACTERS[selectedGender]
   const resolvedName = name.trim() || selected.codename
-
-  const pickGender = (next: AvatarGender) => {
-    setGender(next)
-    const first = AVATAR_PRESETS.find((preset) => preset.gender === next)
-    if (first && selected.gender !== next) setSelectedId(first.id)
-  }
 
   return (
     <main className="lobby-shell avatar-shell">
@@ -338,58 +441,42 @@ function AvatarBuilder({
       <div className="lobby-grid" />
       <header className="lobby-topbar">
         <div className="brand-mini"><span className="brand-mark">H</span><span>HIDEOUT</span></div>
-        <span className="lobby-status"><i /> BUILD YOUR LOOK</span>
+        <span className="lobby-status"><i /> CHOOSE CHARACTER</span>
         <button onClick={onBack}>Back</button>
       </header>
-      <section className="avatar-layout">
+      <section className="avatar-layout gender-pick-layout">
         <div className="avatar-preview-panel">
-          <span className="eyebrow">{visibility.toUpperCase()} · {roomCode} · {role.toUpperCase()}</span>
-          <h1>Choose who<br /><em>hides in the dark.</em></h1>
-          <p>Four boy looks and four girl looks. Your portrait carries into the lobby and the basement.</p>
-          <div
-            className="avatar-hero"
-            style={{
-              '--player-tint': selected.tint,
-              '--avatar-x': selected.avatarX,
-              '--avatar-y': selected.avatarY,
-              backgroundImage: `url(${avatarSheet(selected)})`,
-            } as React.CSSProperties}
-            aria-label={`${selected.label} preview`}
-          />
+          <span className="eyebrow">{visibility === 'public' ? `PUBLIC · ${roomCode}` : `${visibility.toUpperCase()} · ${roomCode}`} · {role.toUpperCase()}</span>
+          <h1>Boy or girl.<br /><em>Dress comes later.</em></h1>
+          <p>Pick your character first. Inside the lobby you can open the dress dashboard and make the look unique.</p>
+          <AvatarStage className="avatar-hero" look={selected} active label={`${selectedGender} preview`} />
           <div className="avatar-hero-meta">
             <strong>{resolvedName}</strong>
-            <small>{selected.gender === 'boys' ? 'BOY' : 'GIRL'} · {selected.label}</small>
+            <small>{selectedGender === 'boys' ? 'BOY' : 'GIRL'} · starter look</small>
           </div>
         </div>
         <section className="avatar-studio">
           <div className="roster-heading">
             <div>
-              <span className="eyebrow">AVATAR PRESETS</span>
-              <h2>8 looks</h2>
+              <span className="eyebrow">CHARACTER SELECT</span>
+              <h2>2 choices</h2>
             </div>
-            <span className="min-ready met">4 BOYS · 4 GIRLS</span>
+            <span className="min-ready met">THEN DRESS IN LOBBY</span>
           </div>
-          <div className="avatar-gender-tabs" role="tablist" aria-label="Avatar gender">
-            <button type="button" role="tab" aria-selected={gender === 'boys'} className={gender === 'boys' ? 'active' : ''} onClick={() => pickGender('boys')}>Boys</button>
-            <button type="button" role="tab" aria-selected={gender === 'girls'} className={gender === 'girls' ? 'active' : ''} onClick={() => pickGender('girls')}>Girls</button>
-          </div>
-          <div className="avatar-grid" role="listbox" aria-label={`${gender} avatar presets`}>
-            {visiblePresets.map((preset) => (
+          <div className="gender-pick-grid" role="listbox" aria-label="Character gender">
+            {(['boys', 'girls'] as AvatarGender[]).map((option) => (
               <button
-                key={preset.id}
+                key={option}
                 type="button"
                 role="option"
-                aria-selected={preset.id === selectedId}
-                className={`avatar-option ${preset.id === selectedId ? 'selected' : ''}`}
-                onClick={() => setSelectedId(preset.id)}
-                style={{
-                  '--player-tint': preset.tint,
-                  '--avatar-x': preset.avatarX,
-                  '--avatar-y': preset.avatarY,
-                  backgroundImage: `url(${avatarSheet(preset)})`,
-                } as React.CSSProperties}
+                aria-selected={selectedGender === option}
+                className={`gender-pick-card ${selectedGender === option ? 'selected' : ''}`}
+                onClick={() => setSelectedGender(option)}
+                style={{ '--player-tint': BASE_CHARACTERS[option].tint } as React.CSSProperties}
               >
-                <span>{preset.label}</span>
+                <AvatarThumb className="gender-pick-thumb" look={BASE_CHARACTERS[option]} label={option} />
+                <strong>{option === 'boys' ? 'Boy' : 'Girl'}</strong>
+                <small>{option === 'boys' ? 'Shadow operative' : 'Echo operative'}</small>
               </button>
             ))}
           </div>
@@ -405,14 +492,83 @@ function AvatarBuilder({
           </label>
           <div className="lobby-actions avatar-actions">
             <button className="ready-button" onClick={onBack}>Cancel</button>
-            <button className="primary-button start-match" onClick={() => onConfirm(selected.id, resolvedName)}>
+            <button className="primary-button start-match" onClick={() => onConfirm(selectedGender, resolvedName)}>
               Enter Lobby <span>→</span>
             </button>
           </div>
-          <p className="lobby-note">Looks are saved on this device for the next match.</p>
+          <p className="lobby-note">Outfit unlocks in the lobby dress dashboard after you enter.</p>
         </section>
       </section>
     </main>
+  )
+}
+
+function DressDashboard({
+  avatar,
+  dressId,
+  onClose,
+  onApply,
+}: {
+  avatar: AvatarLook
+  dressId: string
+  onClose: () => void
+  onApply: (dressId: string, look: AvatarLook) => void
+}) {
+  const kits = DRESS_KITS.filter((kit) => kit.gender === avatar.gender)
+  const [selectedDress, setSelectedDress] = useState(dressId)
+  const previewKit = kits.find((kit) => kit.id === selectedDress) ?? kits[0]
+  const previewLook = applyDress(BASE_CHARACTERS[avatar.gender], previewKit, avatar.codename)
+
+  return (
+    <div className="lobby-overlay dress-overlay" role="dialog" aria-modal="true" aria-label="Dress dashboard">
+      <section className="lobby-card lobby-card-wide dress-card">
+        <button className="modal-close" onClick={onClose} aria-label="Close">×</button>
+        <span className="eyebrow">DRESS DASHBOARD</span>
+        <h2>Make your look unique.</h2>
+        <p>Swap coats, gear, and accents for your {avatar.gender === 'boys' ? 'boy' : 'girl'} operative before the hunt starts.</p>
+        <div className="dress-layout">
+          <AvatarStage className="dress-preview" look={previewLook} active label={previewKit.label} />
+          <div className="dress-panel">
+            <div className="dress-meta">
+              <strong>{previewKit.label}</strong>
+              <small>{ACTION_LABELS[previewKit.action]}</small>
+            </div>
+            <div className="dress-grid" role="listbox" aria-label="Dress kits">
+              {kits.map((kit) => (
+                <button
+                  key={kit.id}
+                  type="button"
+                  role="option"
+                  aria-selected={selectedDress === kit.id}
+                  className={`dress-option ${selectedDress === kit.id ? 'selected' : ''}`}
+                  onClick={() => setSelectedDress(kit.id)}
+                  style={{ '--player-tint': kit.tint } as React.CSSProperties}
+                >
+                  <AvatarThumb
+                    className="dress-option-thumb"
+                    look={applyDress(BASE_CHARACTERS[avatar.gender], kit, avatar.codename)}
+                    label={kit.label}
+                  />
+                  <span>{kit.label}</span>
+                </button>
+              ))}
+            </div>
+            <div className="lobby-actions dress-actions">
+              <button className="ready-button" onClick={onClose}>Cancel</button>
+              <button
+                className="primary-button start-match"
+                onClick={() => {
+                  onApply(previewKit.id, previewLook)
+                  onClose()
+                }}
+              >
+                Lock Dress <span>→</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
   )
 }
 
@@ -422,20 +578,25 @@ function PreGameLobby({
   visibility,
   playerName,
   avatar,
+  dressId,
   onLeave,
-  onEditAvatar,
+  onSwitchCharacter,
+  onDressChange,
   onStart,
 }: {
   role: Role
   roomCode: string
   visibility: RoomVisibility
   playerName: string
-  avatar: AvatarPreset
+  avatar: AvatarLook
+  dressId: string
   onLeave: () => void
-  onEditAvatar: () => void
+  onSwitchCharacter: () => void
+  onDressChange: (dressId: string, look: AvatarLook) => void
   onStart: () => void
 }) {
   const [ready, setReady] = useState(false)
+  const [dressOpen, setDressOpen] = useState(false)
   const isTraining = roomCode === 'TRAINING'
   const players = [
     {
@@ -444,8 +605,6 @@ function PreGameLobby({
       ready,
       local: true,
       tint: avatar.tint,
-      avatarX: avatar.avatarX,
-      avatarY: avatar.avatarY,
     },
   ]
   const minimumPlayers = isTraining ? 1 : 4
@@ -457,19 +616,24 @@ function PreGameLobby({
       <header className="lobby-topbar">
         <div className="brand-mini"><span className="brand-mark">H</span><span>HIDEOUT</span></div>
         <span className="lobby-status"><i /> ROOM ASSEMBLING</span>
-        <button onClick={onEditAvatar}>Edit Avatar</button>
+        <button onClick={onSwitchCharacter}>Switch Character</button>
         <button onClick={onLeave}>Leave Lobby</button>
       </header>
       <section className="lobby-layout">
         <div className="lobby-title">
-          <span className="eyebrow">{visibility.toUpperCase()} ROOM · {roomCode}</span>
+          <span className="eyebrow">{visibility === 'public' ? `PUBLIC LOBBY · ${roomCode}` : `${visibility.toUpperCase()} ROOM · ${roomCode}`}</span>
           <h1>Before the hunt,<br /><em>know your shadows.</em></h1>
-          <p>Check who is ready, choose your role, then enter The Forgotten Basement together.</p>
+          <p>Change your dress to stand out, mark ready, then enter The Forgotten Basement.</p>
           <div className="lobby-map-chip">
             <span>MAP 01</span>
             <strong>The Forgotten Basement</strong>
             <small>4–12 PLAYERS · 1 FINDER</small>
           </div>
+          <button className="dress-launch" onClick={() => setDressOpen(true)}>
+            <span>DRESS DASHBOARD</span>
+            <strong>{avatar.label}</strong>
+            <small>Change outfit · stay unique</small>
+          </button>
         </div>
         <section className="player-roster">
           <div className="roster-heading">
@@ -482,18 +646,12 @@ function PreGameLobby({
           <div className="player-list">
             {players.map((player) => (
               <article className={`player-row ${player.local ? 'you' : ''}`} key={player.name}>
-                <span
-                  className="player-avatar portrait"
-                  style={{
-                    '--player-tint': player.tint,
-                    '--avatar-x': player.avatarX,
-                    '--avatar-y': player.avatarY,
-                    backgroundImage: `url(${avatarSheet(avatar)})`,
-                  } as React.CSSProperties}
-                />
+                <span className="player-avatar portrait" style={{ '--player-tint': player.tint } as React.CSSProperties}>
+                  <AvatarThumb className="player-avatar-stage" look={avatar} label={player.name} />
+                </span>
                 <div>
                   <strong>{player.name}</strong>
-                  <small>{player.local ? 'HOST · ' : ''}{player.role}</small>
+                  <small>{player.local ? 'HOST · ' : ''}{player.role} · {avatar.label}</small>
                 </div>
                 <span className={`ready-pill ${player.ready ? 'ready' : ''}`}>{player.ready ? 'READY' : 'NOT READY'}</span>
               </article>
@@ -516,11 +674,19 @@ function PreGameLobby({
           </div>
           <p className="lobby-note">
             {isTraining
-              ? 'Solo training starts immediately when you are ready.'
-              : 'The room waits for real players. The roster updates whenever players join, leave, or switch rooms.'}
+              ? 'Open the dress dashboard anytime before you start solo training.'
+              : 'Public and private rooms share the same dress dashboard before match start.'}
           </p>
         </section>
       </section>
+      {dressOpen && (
+        <DressDashboard
+          avatar={avatar}
+          dressId={dressId}
+          onClose={() => setDressOpen(false)}
+          onApply={onDressChange}
+        />
+      )}
     </main>
   )
 }
@@ -534,11 +700,12 @@ function MainMenu({ onStart }: { onStart: (role: Role, roomCode?: string, visibi
       <div className="menu-light one" /><div className="menu-light two" /><div className="menu-orbit" />
       <section className="menu-copy">
         <div className="logo-lockup"><span className="eyebrow">A GAME OF DECEPTION</span><img src={hideoutLogo} alt="HIDEOUT" /></div>
-        <p className="tagline"><span>Hide well.</span> Trust nobody. Survive the hunt.</p>
+        <p className="tagline">Hide well. Trust nobody. Survive the hunt.</p>
         <p className="intro">A stylized game of hide-and-seek inside a basement much too big for the people trapped in it.</p>
         <div className="menu-actions">
           <button className="primary-button" onClick={() => setRoomPanel('create')}>Create Private Room <span>→</span></button>
           <button className="public-room-button" onClick={() => setRoomPanel('public')}><i /> Create Public Room</button>
+          <button className="public-room-button join-public" onClick={() => setRoomPanel('browse')}><i /> Join Public Room</button>
           <button className="secondary-button" onClick={() => setRoomPanel('join')}>Join with Code</button>
         </div>
         <div className="menu-quick-links"><button onClick={() => onStart('Hider')}>Solo Hider Training</button><i /> <button onClick={() => onStart('Finder')}>Finder Training</button></div>
@@ -550,7 +717,7 @@ function MainMenu({ onStart }: { onStart: (role: Role, roomCode?: string, visibi
         <div className="map-lines"><i /><i /><i /><i /><i /></div>
         <p>Storage · Laundry · Workshop<br />Boiler Room · Old Library</p>
       </section>
-      <footer className="menu-footer"><span>LOCAL PROTOTYPE 01</span><span>HEADPHONES RECOMMENDED</span></footer>
+      <footer className="menu-footer"><span>HEADPHONES RECOMMENDED</span></footer>
       {roomPanel !== 'none' && <RoomPanelDialog type={roomPanel} onClose={() => setRoomPanel('none')} onStart={onStart} />}
     </main>
   )
@@ -560,33 +727,89 @@ function RoomPanelDialog({ type, onClose, onStart }: { type: Exclude<RoomPanel, 
   const [code] = useState(makeRoomCode)
   const [joinCode, setJoinCode] = useState('')
   const [copied, setCopied] = useState(false)
-  const isCreate = type === 'create' || type === 'public'
+  const [publicRooms, setPublicRooms] = useState(() => shufflePublicRooms())
+  const [selectedPublic, setSelectedPublic] = useState<string | null>(null)
+  const isPrivateCreate = type === 'create'
   const isPublic = type === 'public'
+  const isBrowse = type === 'browse'
+  const isJoin = type === 'join'
+  const selectedListing = publicRooms.find((room) => room.id === selectedPublic) ?? null
   const copyCode = async () => {
     await navigator.clipboard?.writeText(code)
     setCopied(true)
   }
-  return <div className="lobby-overlay" role="dialog" aria-modal="true" aria-label={isCreate ? 'Create private room' : 'Join a room'}>
-    <section className="lobby-card">
+  const refreshPublic = () => {
+    const next = shufflePublicRooms(Date.now())
+    setPublicRooms(next)
+    setSelectedPublic(next[0]?.id ?? null)
+  }
+  useEffect(() => {
+    if (isBrowse && !selectedPublic && publicRooms[0]) setSelectedPublic(publicRooms[0].id)
+  }, [isBrowse, publicRooms, selectedPublic])
+
+  return <div className="lobby-overlay" role="dialog" aria-modal="true" aria-label={isBrowse ? 'Join public room' : isPublic ? 'Create public room' : isPrivateCreate ? 'Create private room' : 'Join a room'}>
+    <section className={`lobby-card ${isBrowse ? 'lobby-card-wide' : ''}`}>
       <button className="modal-close" onClick={onClose} aria-label="Close">×</button>
-      <span className="eyebrow">{isPublic ? 'PUBLIC LOBBY' : isCreate ? 'PRIVATE LOBBY' : 'ENTER THE HIDEOUT'}</span>
-      <h2>{isPublic ? 'Open the doors.' : isCreate ? 'Gather your crew.' : 'Join the hunt.'}</h2>
-      <p>{isPublic ? 'Your room will be discoverable in the public room browser while it is waiting for players.' : isCreate ? 'Share this code with friends. A full match begins once everyone is in the lobby.' : 'Ask the room host for their six-character Hideout code.'}</p>
-      {isCreate ? <>
+      <span className="eyebrow">{isBrowse ? 'PUBLIC BROWSER' : isPublic ? 'PUBLIC LOBBY' : isPrivateCreate ? 'PRIVATE LOBBY' : 'ENTER THE HIDEOUT'}</span>
+      <h2>{isBrowse ? 'Find an open hunt.' : isPublic ? 'Open the doors.' : isPrivateCreate ? 'Gather your crew.' : 'Join the hunt.'}</h2>
+      <p>{isBrowse ? 'Pick a discoverable public lobby. No invite code needed — walk in while seats are open.' : isPublic ? 'Your room will be discoverable in the public room browser while it is waiting for players. No invite code needed.' : isPrivateCreate ? 'Share this code with friends. A full match begins once everyone is in the lobby.' : 'Ask the room host for their six-character Hideout code.'}</p>
+      {isPublic && (
+        <button className="primary-button lobby-enter" onClick={() => onStart('Hider', 'Open Lobby', 'public')}>
+          Open Public Lobby <span>→</span>
+        </button>
+      )}
+      {isBrowse && (
+        <div className="public-browser">
+          <div className="public-browser-toolbar">
+            <span>{publicRooms.length} rooms waiting</span>
+            <button type="button" className="copy-button" onClick={refreshPublic}>Refresh list</button>
+          </div>
+          <div className="public-room-list" role="listbox" aria-label="Public rooms">
+            {publicRooms.map((room) => (
+              <button
+                key={room.id}
+                type="button"
+                role="option"
+                aria-selected={selectedPublic === room.id}
+                className={`public-room-row ${selectedPublic === room.id ? 'selected' : ''}`}
+                onClick={() => setSelectedPublic(room.id)}
+              >
+                <div>
+                  <strong>{room.name}</strong>
+                  <small>Host {room.host} · {room.map}</small>
+                </div>
+                <div className="public-room-meta">
+                  <span>{room.players}/{room.capacity}</span>
+                  <em>{room.wait}</em>
+                </div>
+              </button>
+            ))}
+          </div>
+          <button
+            className="primary-button lobby-enter"
+            disabled={!selectedListing}
+            onClick={() => selectedListing && onStart('Hider', selectedListing.name, 'public')}
+          >
+            Join {selectedListing ? selectedListing.name : 'Public Room'} <span>→</span>
+          </button>
+        </div>
+      )}
+      {isPrivateCreate && <>
         <div className="room-code-display"><span>ROOM CODE</span><strong>{code}</strong></div>
         <button className="copy-button" onClick={copyCode}>{copied ? 'Copied to clipboard' : 'Copy room code'}</button>
-        <button className="primary-button lobby-enter" onClick={() => onStart('Hider', code, isPublic ? 'public' : 'private')}>{isPublic ? 'Open Public Lobby' : 'Enter Lobby'} <span>→</span></button>
-      </> : <>
-        <label className="room-input"><span>ROOM CODE</span><input autoFocus value={joinCode} onChange={(event) => setJoinCode(event.target.value.toUpperCase())} placeholder="HIDE-AB12" maxLength={9} /></label>
-        <button className="primary-button lobby-enter" disabled={joinCode.trim().length < 4} onClick={() => onStart('Hider', joinCode.trim())}>Join Room <span>→</span></button>
+        <button className="primary-button lobby-enter" onClick={() => onStart('Hider', code, 'private')}>Enter Lobby <span>→</span></button>
       </>}
-      <small>{isPublic ? 'Public rooms are discoverable until the match starts.' : 'Creator exit before start closes this room.'} · server matchmaking is the next multiplayer milestone.</small>
+      {isJoin && <>
+        <label className="room-input"><span>ROOM CODE</span><input autoFocus value={joinCode} onChange={(event) => setJoinCode(event.target.value.toUpperCase())} placeholder="HIDE-AB12" maxLength={9} /></label>
+        <button className="primary-button lobby-enter" disabled={joinCode.trim().length < 4} onClick={() => onStart('Hider', joinCode.trim(), 'private')}>Join Room <span>→</span></button>
+      </>}
+      <small>{isBrowse ? 'Public rooms stay listed until the host starts the match.' : isPublic ? 'Players find this room from the public browser until the match starts.' : isPrivateCreate ? 'Creator exit before start closes this room.' : 'Private rooms need a host code to enter.'}</small>
     </section>
   </div>
 }
 
-function Basement({ phase, role, playerHidden, flashlight, caughtBots, bodyColor, onMove }: {
-  phase: Phase; role: Role; playerHidden: boolean; flashlight: boolean; caughtBots: number[]; bodyColor: string; onMove: (position: Vector) => void
+function Basement({ phase, role, playerHidden, flashlight, caughtBots, avatar, onMove }: {
+  phase: Phase; role: Role; playerHidden: boolean; flashlight: boolean; caughtBots: number[]; avatar: AvatarLook; onMove: (position: Vector) => void
 }) {
   return <>
     <color attach="background" args={['#121811']} />
@@ -609,7 +832,7 @@ function Basement({ phase, role, playerHidden, flashlight, caughtBots, bodyColor
       flashlight={flashlight}
       role={role}
       phase={phase}
-      bodyColor={bodyColor}
+      avatar={avatar}
       onMove={onMove}
     />
   </>
@@ -659,17 +882,24 @@ function BotHider({ position, visible }: { position: [number, number, number]; v
   return <group position={[position[0] + 0.25, 0.55, position[2] + 0.2]}><mesh castShadow><capsuleGeometry args={[0.26, 0.65, 6, 10]} /><meshStandardMaterial color="#9bb2b1" roughness={0.7} /></mesh><Text position={[0, 1, 0]} fontSize={0.2} color="#e2ddd0">HIDER</Text></group>
 }
 
-function PlayerController({ disabled, hidden, flashlight, role, phase, bodyColor, onMove }: { disabled: boolean; hidden: boolean; flashlight: boolean; role: Role; phase: Phase; bodyColor: string; onMove: (position: Vector) => void }) {
+function PlayerController({ disabled, hidden, flashlight, role, phase, avatar, onMove }: { disabled: boolean; hidden: boolean; flashlight: boolean; role: Role; phase: Phase; avatar: AvatarLook; onMove: (position: Vector) => void }) {
   const character = useRef<THREE.Group>(null)
   const keys = useRef(new Set<string>())
   const drag = useRef(false)
   const yaw = useRef(role === 'Finder' ? 0 : Math.PI)
-  const pos = useRef(new THREE.Vector3(0, 0.67, role === 'Finder' ? -0.5 : 3.2))
+  const pos = useRef(new THREE.Vector3(0, 0, role === 'Finder' ? -0.5 : 3.2))
+  const movingRef = useRef(false)
+  const [isMoving, setIsMoving] = useState(false)
   const { camera, gl } = useThree()
   const lastSent = useRef(0)
+  const playLook = useMemo<AvatarLook>(() => ({
+    ...avatar,
+    bodyColor: role === 'Finder' ? '#bc6c45' : avatar.bodyColor,
+    action: isMoving ? 'bounce' : role === 'Finder' ? 'search' : avatar.action,
+  }), [avatar, role, isMoving])
 
   useEffect(() => {
-    pos.current.set(0, 0.67, role === 'Finder' ? -0.5 : 3.2)
+    pos.current.set(0, 0, role === 'Finder' ? -0.5 : 3.2)
     yaw.current = role === 'Finder' ? 0 : Math.PI
   }, [role, phase])
   useEffect(() => {
@@ -682,6 +912,7 @@ function PlayerController({ disabled, hidden, flashlight, role, phase, bodyColor
   }, [])
   useFrame((state, delta) => {
     const k = keys.current
+    let nextMoving = false
     if (!disabled) {
       const forward = new THREE.Vector3(Math.sin(yaw.current), 0, Math.cos(yaw.current))
       const right = new THREE.Vector3(forward.z, 0, -forward.x)
@@ -691,11 +922,16 @@ function PlayerController({ disabled, hidden, flashlight, role, phase, bodyColor
       if (k.has('KeyD') || k.has('ArrowRight')) move.add(right)
       if (k.has('KeyA') || k.has('ArrowLeft')) move.sub(right)
       if (move.lengthSq() > 0) {
+        nextMoving = true
         move.normalize().multiplyScalar((k.has('ShiftLeft') ? 5.2 : 3.15) * delta)
         pos.current.add(move)
         pos.current.x = THREE.MathUtils.clamp(pos.current.x, -10.6, 10.6)
         pos.current.z = THREE.MathUtils.clamp(pos.current.z, -10.6, 10.6)
       }
+    }
+    if (movingRef.current !== nextMoving) {
+      movingRef.current = nextMoving
+      setIsMoving(nextMoving)
     }
     if (character.current) {
       character.current.position.copy(pos.current)
@@ -703,16 +939,14 @@ function PlayerController({ disabled, hidden, flashlight, role, phase, bodyColor
       character.current.visible = !hidden
     }
     const forward = new THREE.Vector3(Math.sin(yaw.current), 0, Math.cos(yaw.current))
-    const target = pos.current.clone().add(new THREE.Vector3(0, 0.65, 0))
+    const target = pos.current.clone().add(new THREE.Vector3(0, 1.25, 0))
     const desired = pos.current.clone().sub(forward.multiplyScalar(5.3)).add(new THREE.Vector3(0, 3.25, 0))
     camera.position.lerp(desired, 1 - Math.exp(-delta * 7))
     camera.lookAt(target)
     if (state.clock.elapsedTime - lastSent.current > 0.12) { onMove({ x: pos.current.x, z: pos.current.z }); lastSent.current = state.clock.elapsedTime }
   })
   return <group ref={character} onPointerDown={(event) => { event.stopPropagation(); drag.current = true; gl.domElement.style.cursor = 'grabbing' }}>
-    <mesh castShadow><capsuleGeometry args={[0.32, 0.73, 6, 12]} /><meshStandardMaterial color={role === 'Finder' ? '#bc6c45' : bodyColor} roughness={0.58} /></mesh>
-    <mesh position={[0, 0.66, 0]} castShadow><sphereGeometry args={[0.3, 16, 12]} /><meshStandardMaterial color="#e4b18d" roughness={0.82} /></mesh>
-    <mesh position={[0, 0.91, 0.12]}><sphereGeometry args={[0.06, 10, 10]} /><meshStandardMaterial color="#252b26" /></mesh>
-    {flashlight && <spotLight position={[0.23, 0.4, 0]} rotation={[-Math.PI / 2, 0, 0]} angle={0.48} penumbra={0.8} intensity={15} distance={9} color="#fff1bc" target-position={[0, 0, 5]} />}
+    <AvatarCharacter look={playLook} active={!disabled} showShadow={false} scale={1.05} />
+    {flashlight && <spotLight position={[0.28, 1.2, 0.35]} angle={0.48} penumbra={0.8} intensity={15} distance={9} color="#fff1bc" />}
   </group>
 }
