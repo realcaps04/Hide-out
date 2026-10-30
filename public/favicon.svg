@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="HIDEOUT">
+  <defs>
+    <linearGradient id="gold" x1="12" y1="8" x2="52" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f2db80"/>
+      <stop offset=".45" stop-color="#d6b24f"/>
+      <stop offset="1" stop-color="#c99436"/>
+    </linearGradient>
+    <linearGradient id="door" x1="28" y1="24" x2="36" y2="44" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffe7a8"/>
+      <stop offset="1" stop-color="#e7a44c"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="32" cy="34" r="18" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#e7a44c" stop-opacity=".35"/>
+      <stop offset="1" stop-color="#e7a44c" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#11140e"/>
+  <rect x="3" y="3" width="58" height="58" rx="12" fill="none" stroke="url(#gold)" stroke-width="2.5"/>
+  <circle cx="32" cy="34" r="18" fill="url(#glow)"/>
+  <path fill="url(#gold)" d="M18 14h8v14h12V14h8v36h-8V36H26v14h-8z"/>
+  <path fill="url(#door)" d="M29 28h6v12c0 2-1.4 3.5-3 3.5s-3-1.5-3-3.5z"/>
+</svg>
