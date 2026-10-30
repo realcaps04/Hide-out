@@ -2,6 +2,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Environment, Float, Sparkles, Text } from '@react-three/drei'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
+import hideoutLogo from './assets/hideout-logo.png'
 
 type Role = 'Hider' | 'Finder'
 type Phase = 'menu' | 'hide' | 'hunt' | 'results'
@@ -201,10 +202,11 @@ function MainMenu({ onStart }: { onStart: (role: Role) => void }) {
   const [showAbout, setShowAbout] = useState(false)
   return (
     <main className="menu-shell">
-      <div className="menu-light one" /><div className="menu-light two" />
+      <div className="menu-vignette" /><div className="menu-noise" />
+      <div className="menu-light one" /><div className="menu-light two" /><div className="menu-orbit" />
       <section className="menu-copy">
-        <div className="logo-lockup"><span className="logo-mark">H</span><div><span className="eyebrow">A GAME OF DECEPTION</span><h1>HIDEOUT<span className="period">.</span></h1></div></div>
-        <p className="tagline">Hide well. Trust nobody. Survive the hunt.</p>
+        <div className="logo-lockup"><span className="eyebrow">A GAME OF DECEPTION</span><img src={hideoutLogo} alt="HIDEOUT" /></div>
+        <p className="tagline"><span>Hide well.</span> Trust nobody. Survive the hunt.</p>
         <p className="intro">A stylized game of hide-and-seek inside a basement much too big for the people trapped in it.</p>
         <div className="menu-actions">
           <button className="primary-button" onClick={() => onStart('Hider')}>Enter as a Hider <span>→</span></button>
@@ -214,7 +216,7 @@ function MainMenu({ onStart }: { onStart: (role: Role) => void }) {
         {showAbout && <p className="project-note">This is the first local gameplay slice: a playable 3D basement, movement, hiding spots, a timed hunt, and catch rules. Live rooms, player accounts, voice, and deployment will plug in as the next stages.</p>}
       </section>
       <section className="menu-map-card">
-        <span className="eyebrow">MAP 01</span><h2>The Forgotten<br />Basement</h2>
+        <div className="map-card-top"><span className="eyebrow">MAP 01</span><span className="live-dot">DISCOVERED</span></div><h2>The Forgotten<br />Basement</h2>
         <div className="map-lines"><i /><i /><i /><i /><i /></div>
         <p>Storage · Laundry · Workshop<br />Boiler Room · Old Library</p>
       </section>
