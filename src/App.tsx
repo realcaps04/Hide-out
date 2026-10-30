@@ -709,8 +709,7 @@ function MainMenu({ onStart }: { onStart: (role: Role, roomCode?: string, visibi
           <button className="secondary-button" onClick={() => setRoomPanel('join')}>Join with Code</button>
         </div>
         <div className="menu-quick-links"><button onClick={() => onStart('Hider')}>Solo Hider Training</button><i /> <button onClick={() => onStart('Finder')}>Finder Training</button></div>
-        <button className="about-button" onClick={() => setShowAbout((open) => !open)}>{showAbout ? 'Close project note' : 'What is this first build?'}</button>
-        {showAbout && <p className="project-note">This is the first local gameplay slice: a playable 3D basement, movement, hiding spots, a timed hunt, and catch rules. Live rooms, player accounts, voice, and deployment will plug in as the next stages.</p>}
+        <button className="about-button" onClick={() => setShowAbout(true)}>What is this first build?</button>
       </section>
       <section className="menu-map-card">
         <div className="map-card-top"><span className="eyebrow">MAP 01</span><span className="live-dot">DISCOVERED</span></div><h2>The Forgotten<br />Basement</h2>
@@ -718,6 +717,17 @@ function MainMenu({ onStart }: { onStart: (role: Role, roomCode?: string, visibi
         <p>Storage · Laundry · Workshop<br />Boiler Room · Old Library</p>
       </section>
       <footer className="menu-footer"><span>HEADPHONES RECOMMENDED</span></footer>
+      {showAbout && (
+        <div className="lobby-overlay" role="dialog" aria-modal="true" aria-label="Project note">
+          <section className="lobby-card about-card">
+            <button className="modal-close" onClick={() => setShowAbout(false)} aria-label="Close">×</button>
+            <span className="eyebrow">PROJECT NOTE</span>
+            <h2>What is this first build?</h2>
+            <p>This is the first local gameplay slice: a playable 3D basement, movement, hiding spots, a timed hunt, and catch rules. Live rooms, player accounts, voice, and deployment will plug in as the next stages.</p>
+            <button className="primary-button lobby-enter" onClick={() => setShowAbout(false)}>Close project note</button>
+          </section>
+        </div>
+      )}
       {roomPanel !== 'none' && <RoomPanelDialog type={roomPanel} onClose={() => setRoomPanel('none')} onStart={onStart} />}
     </main>
   )
